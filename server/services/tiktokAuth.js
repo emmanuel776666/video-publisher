@@ -143,6 +143,117 @@ const exchangeTikTokCode = async (code) => {
   return result;
 };
 
+// Refresh TikTok credentials when the access token is expired
+// or is about to expire.
+const refreshTikTokAccessToken = async () => {
+  const { clientKey, clientSecret } = getTikTokConfig();
+
+  const connection = await TikTokConnection.findOne({
+    connectionName: "primary",
+  });
+
+  if (!connection) {
+    throw new Error("No TikTok account is connected.");
+  }
+
+  const currentAccessExpiry = new Date(
+    connection.accessTokenExpiresAt
+  ).getTime();
+
+  // Keep a five-minute safety window.
+  if (currentAccessExpiry > Date.now() + 5 * 60 * 1000) {
+    return getTikTokConnection();
+  }
+
+  const refreshToken = decryptToken(
+    connection.encryptedRefreshToken,
+    connection.refreshTokenIv,
+    connection.refreshTokenAuthTag
+  );
+
+  const body = new URLSearchParams({
+    client_key: clientKey,
+    client_secret: clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+
+  const response = await fetch(TIKTOK_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Cache-Control": "no-cache",
+    },
+    body,
+  });
+
+  const result = await response.json();
+
+  if (
+    !response.ok ||
+    result.error ||
+    !result.access_token ||
+    !result.refresh_token
+  ) {
+    console.error("TikTok token refresh failed:", {
+      status: response.status,
+      error: result.error || null,
+      description: result.error_description || null,
+      logId: result.log_id || null,
+    });
+
+    throw new Error("Could not refresh TikTok authorization.");
+  }
+
+  // Save both new tokens because TikTok can rotate the refresh token.
+  await saveTikTokConnection({
+    ...result,
+    open_id: result.open_id || connection.openId,
+    scope: result.scope || connection.scopes,
+  });
+
+  return getTikTokConnection();
+};
+
+// Retrieve the connected creator's current TikTok posting settings.
+const getTikTokCreatorInfo = async () => {
+  const connection = await refreshTikTokAccessToken();
+
+  if (!connection) {
+    throw new Error("No TikTok account is connected.");
+  }
+
+  const response = await fetch(
+    "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${connection.accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({}),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok || result.error?.code !== "ok") {
+    console.error("TikTok creator info request failed:", {
+      status: response.status,
+      error: result.error?.code || null,
+      message: result.error?.message || null,
+      logId: result.error?.log_id || null,
+    });
+
+    throw new Error(
+      result.error?.message ||
+      "Could not retrieve TikTok creator information."
+    );
+  }
+
+  return result.data;
+};
+
 // Encrypt and save TikTok credentials in MongoDB.
 const saveTikTokConnection = async (tokens) => {
   const accessToken = encryptToken(tokens.access_token);
@@ -217,4 +328,6 @@ module.exports = {
   exchangeTikTokCode,
   saveTikTokConnection,
   getTikTokConnection,
+  refreshTikTokAccessToken,
+  getTikTokCreatorInfo,
 };

@@ -18,6 +18,7 @@ const discoveryRoutes = require("./routes/discoveryRoutes");
 const videoRoutes = require("./routes/videoRoutes");
 const youtubeAuthRoutes = require("./routes/youtubeAuthRoutes");
 const tiktokAuthRoutes = require("./routes/tiktokAuthRoutes");
+const tiktokRoutes = require("./routes/tiktokRoutes");
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/discovery", discoveryRoutes);
 app.use("/api/video", videoRoutes);
 app.use("/", youtubeAuthRoutes);
 app.use("/", tiktokAuthRoutes);
+app.use("/api/tiktok", tiktokRoutes);
 // Homepage
 app.get("/", (req, res) => {
   res.send("Video Publisher API is running.");
