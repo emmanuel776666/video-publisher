@@ -114,18 +114,33 @@ const exchangeTikTokCode = async (code) => {
 
   const result = await response.json();
 
-  if (!response.ok || result.error || !result.data?.access_token) {
-    console.error("TikTok token exchange failed:", {
-      status: response.status,
-      error: result.error,
-      description: result.error_description,
-      logId: result.log_id,
-    });
+  // TikTok OAuth token responses use top-level fields.
+  // Log diagnostic information without exposing credentials.
+  console.log("TikTok token endpoint response:", {
+    httpStatus: response.status,
+    hasAccessToken: Boolean(result.access_token),
+    hasRefreshToken: Boolean(result.refresh_token),
+    hasOpenId: Boolean(result.open_id),
+    error: result.error || null,
+    errorDescription: result.error_description || null,
+    logId: result.log_id || null,
+  });
 
-    throw new Error("TikTok could not complete account authorization.");
+  if (
+    !response.ok ||
+    result.error ||
+    !result.access_token ||
+    !result.refresh_token ||
+    !result.open_id
+  ) {
+    throw new Error(
+      result.error_description ||
+      result.error ||
+      "TikTok returned an incomplete token response."
+    );
   }
 
-  return result.data;
+  return result;
 };
 
 // Encrypt and save TikTok credentials in MongoDB.
